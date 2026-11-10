@@ -3416,6 +3416,15 @@ zfs_inactive(struct vnode *vp)
 		return;
 	}
 
+	/*
+	 * A read-only file system (including a pool imported read-only)
+	 * never syncs: the transaction below would dirty the dataset, and
+	 * dsl_dataset_dirty()'s hold would then never be released, leaving
+	 * the pool busy for export forever.  Drop the pending atime instead.
+	 */
+	if (zp->z_atime_dirty && zfs_is_readonly(zfsvfs))
+		zp->z_atime_dirty = 0;
+
 	if (zp->z_atime_dirty && zp->z_unlinked == 0 &&
 	    !spa_suspended(dmu_objset_spa(zfsvfs->z_os))) {
 		dmu_tx_t *tx = dmu_tx_create(zfsvfs->z_os);
