@@ -77,6 +77,18 @@ else()
 	message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
+# Kernel code: upstream marks some members ____cacheline_aligned (zio_t,
+# dsl_pool_t, metaslab_group_t, ...), so clang assumes those objects are
+# 64-byte aligned and, optimizing, copies into them with aligned SSE
+# stores (movaps).  The Windows SPL kmem caches only guarantee KMEM_ALIGN
+# (8), and Linux never sees this because its kernel builds without SSE.
+# A Release driver took a general-protection fault in zio_create().
+# Never assume more than 8 bytes of alignment behind a pointer.  Kernel
+# targets (wdk_add_library/wdk_add_driver) take only WDK_COMPILE_FLAGS, and
+# only clang directories call use_clang(); driver.c (MSVC) is not one.
+list(APPEND WDK_COMPILE_FLAGS -Xclang -fmax-type-align=8)
+set(WDK_COMPILE_FLAGS "${WDK_COMPILE_FLAGS}" PARENT_SCOPE)
+
 add_compile_options(
 	# These are all MS headers
 	-Wno-nonportable-include-path
