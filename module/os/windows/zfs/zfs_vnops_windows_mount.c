@@ -160,11 +160,17 @@ SendIoctlToMountManager(__in ULONG IoControlCode, __in PVOID InputBuffer,
 	// Deadlock possible here.
 	status = IoCallDriver(mountmgr_deviceobject, irp);
 
-	if (status == STATUS_PENDING)
+	/*
+	 * iosb is only certain to be filled in once the event is signalled;
+	 * when IoCallDriver() does not pend, its return value is the status.
+	 * Reading iosb unconditionally returned stack garbage (seen as
+	 * "IoCallDriver failed: 0xeaa30690" for successful calls).
+	 */
+	if (status == STATUS_PENDING) {
 		KeWaitForSingleObject(&driverEvent, Executive, KernelMode,
 		    FALSE, NULL);
-
-	status = iosb.Status;
+		status = iosb.Status;
+	}
 
 	if (NT_SUCCESS(status) || status == STATUS_BUFFER_OVERFLOW) {
 		dprintf("  IoCallDriver success\n");

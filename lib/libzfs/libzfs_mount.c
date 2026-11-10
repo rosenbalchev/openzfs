@@ -1267,6 +1267,17 @@ zfs_foreach_mountpoint(libzfs_handle_t *hdl, zfs_handle_t **handles,
 	 */
 	boolean_t serial_mount = nthr <= 1 ||
 	    (getenv("ZFS_SERIAL_MOUNT") != NULL);
+#ifdef _WIN32
+	/*
+	 * The Windows driver finishes each mount below a parent (a reparse
+	 * point plus MountMgr registration, NotifyMountMgr_impl()) on a
+	 * taskq; mounts issued in parallel race there and some never reach
+	 * MountMgr: they stay mounted in the kernel but are invisible to
+	 * getmntent(), so the pool cannot be exported.  Mounting one at a
+	 * time is also faster (12 datasets: 1 s instead of 10.7 s).
+	 */
+	serial_mount = B_TRUE;
+#endif
 
 	/*
 	 * Sort the datasets by mountpoint. See mountpoint_cmp for details
