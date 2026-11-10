@@ -85,6 +85,25 @@ zfs_file_open(const char *path, int flags, int mode, cred_t *cr,
 	fp->f_dump_fd = dump_fd;
 	*fpp = fp;
 
+#ifdef _WIN32
+	/*
+	 * "#offset#length#device" is the ZFS partition zpool made on a whole
+	 * disk (zpool_vdev_os.c).  wosix_open() opened the device; I/O is
+	 * relative to the partition, and the vdev ends where the partition
+	 * does, not at the end of the disk, which holds the backup GPT.
+	 */
+	fp->f_win_offset = 0;
+	fp->f_win_length = 0;
+	if (path[0] == '#') {
+		char *end = NULL;
+
+		fp->f_win_offset = strtoull(&path[1], &end, 10);
+		while (end != NULL && *end == '#')
+			end++;
+		fp->f_win_length = strtoull(end, NULL, 10);
+	}
+#endif
+
 	return (0);
 }
 
@@ -144,6 +163,10 @@ zfs_file_pwrite(zfs_file_t *fp, const void *buf,
 {
 	ssize_t rc, split, done;
 	int sectors;
+
+#ifdef _WIN32
+	pos += fp->f_win_offset;
+#endif
 
 	/*
 	 * To simulate partial disk writes, we split writes into two
@@ -229,6 +252,10 @@ zfs_file_pread(zfs_file_t *fp, void *buf, size_t count, loff_t off,
 {
 	ssize_t rc;
 
+#ifdef _WIN32
+	off += fp->f_win_offset;
+#endif
+
 	rc = pread64(fp->f_fd, buf, count, off);
 	if (rc < 0) {
 #ifdef __linux__
@@ -302,6 +329,11 @@ zfs_file_getattr(zfs_file_t *fp, zfs_file_attr_t *zfattr)
 
 	zfattr->zfa_size = st.st_size;
 	zfattr->zfa_mode = st.st_mode;
+#ifdef _WIN32
+	/* A partition of a disk: its length, not the disk's. */
+	if (fp->f_win_length > 0)
+		zfattr->zfa_size = fp->f_win_length;
+#endif
 
 	return (0);
 }

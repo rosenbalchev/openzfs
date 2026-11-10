@@ -120,8 +120,9 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	 * We must have a pathname, and it must be absolute.
 	 */
 #ifdef _WIN32
+	/* '#': "#offset#length#device", a ZFS partition of a whole disk. */
 	if (vd->vdev_path == NULL || (vd->vdev_path[0] != '/' &&
-	    vd->vdev_path[0] != '\\')) {
+	    vd->vdev_path[0] != '\\' && vd->vdev_path[0] != '#')) {
 #else
 	if (vd->vdev_path == NULL || vd->vdev_path[0] != '/') {
 #endif

@@ -31,6 +31,8 @@ typedef struct zfs_file {
 	int f_fd;
 	int f_dump_fd;
 #ifdef _WIN32
+	/* "#offset#length#device": partition length, 0 for a file or device */
+	loff_t f_win_length;
 	loff_t f_win_offset;
 #endif
 } zfs_file_t;
