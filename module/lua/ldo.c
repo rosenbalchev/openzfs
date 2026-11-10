@@ -111,11 +111,13 @@ extern __attribute__((noreturn)) void ASMABI longjmp(label_t *);
 #endif
 
 #if defined (_WIN32) && defined (__aarch64__)
-#define LUAI_THROW(L,c)		longjmp(&(c)->b, 1)
+/* The WDK's setjmp/longjmp take its jmp_buf (unsigned __int64[]). */
+#define LUAI_THROW(L,c)		longjmp((c)->b.val, 1)
+#define LUAI_TRY(L,c,a)		if (setjmp((c)->b.val) == 0) { a }
 #else
 #define LUAI_THROW(L,c)		longjmp(&(c)->b)
-#endif
 #define LUAI_TRY(L,c,a)		if (setjmp(&(c)->b) == 0) { a }
+#endif
 #define luai_jmpbuf		label_t
 
 /* unsupported arches will build but not be able to run lua programs */
