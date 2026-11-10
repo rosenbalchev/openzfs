@@ -11626,6 +11626,25 @@ _Function_class_(DRIVER_DISPATCH)
 #endif
 
 	if ((Status == STATUS_INVALID_DEVICE_REQUEST) && Irp &&
+	    zmo != NULL && zmo->type != MOUNT_TYPE_BUS) {
+		/*
+		 * Our volume devices are PDOs (reported in the bus's
+		 * BusRelations), so each is the bottom of its own stack.  An
+		 * IRP they do not handle must be completed here, not passed
+		 * to the bus FDO's lower device: that is another stack, the
+		 * IRP has no stack location left for it, and Driver
+		 * Verifier's filter then faults.  PnP and power IRPs keep
+		 * their status, as WDM requires of a PDO.
+		 */
+		if (IrpSp->MajorFunction == IRP_MJ_PNP ||
+		    IrpSp->MajorFunction == IRP_MJ_POWER)
+			Status = Irp->IoStatus.Status;
+		else
+			Irp->IoStatus.Status = Status;
+		Irp->IoStatus.Information = 0;
+		IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+	} else if ((Status == STATUS_INVALID_DEVICE_REQUEST) && Irp &&
 	    zmo != NULL &&
 	    DriverExtension->LowerDeviceObject != NULL &&
 	    DriverExtension->ioctlDeviceObject) {
