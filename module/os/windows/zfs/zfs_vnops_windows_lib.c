@@ -3049,7 +3049,13 @@ zfs_attach_security(struct vnode *vp, struct vnode *dvp,
 	if (vp->security_descriptor != NULL)
 		return (Status);
 
+	/*
+	 * The vnode can lose its znode to a concurrent reclaim right after
+	 * zfs_znode_getvnode() publishes it; there is nothing to attach to.
+	 */
 	znode_t *zp = VTOZ(vp);
+	if (zp == NULL)
+		return (Status);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
 	/*
