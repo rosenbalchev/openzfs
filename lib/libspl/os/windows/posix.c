@@ -1145,8 +1145,11 @@ getline(char **linep, size_t *linecapp, FILE *stream)
 int
 wosix_fsync(int fd)
 {
-	if (!FlushFileBuffers(ITOH(fd)))
-		return (EIO);
+	/* POSIX: -1 and errno; zfs_file_fsync() tests for a negative result. */
+	if (!FlushFileBuffers(ITOH(fd))) {
+		errno = EIO;
+		return (-1);
+	}
 	return (0);
 }
 
