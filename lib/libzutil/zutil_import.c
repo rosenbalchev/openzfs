@@ -1470,6 +1470,32 @@ zpool_find_import_scan(libpc_handle_t *hdl, pthread_mutex_t *lock,
 	for (i = 0; i < dirs; i++) {
 		struct stat sbuf;
 
+#ifdef _WIN32
+		/*
+		 * "#offset#length#device": a ZFS partition of a whole disk, as
+		 * zpool create names it and an imported pool records it.  No
+		 * stat() for that; zpool_open_func() reads its labels.
+		 */
+		if (dir[i][0] == '#') {
+			rdsk_node_t *slice = zutil_alloc(hdl, sizeof (*slice));
+			avl_index_t where;
+
+			slice->rn_name = zutil_strdup(hdl, dir[i]);
+			slice->rn_lock = lock;
+			slice->rn_avl = cache;
+			slice->rn_hdl = hdl;
+			slice->rn_order = i + IMPORT_ORDER_SCAN_OFFSET;
+			pthread_mutex_lock(lock);
+			if (avl_find(cache, slice, &where)) {
+				free(slice->rn_name);
+				free(slice);
+			} else {
+				avl_insert(cache, slice, where);
+			}
+			pthread_mutex_unlock(lock);
+			continue;
+		}
+#endif
 		if (stat(dir[i], &sbuf) != 0) {
 			error = errno;
 			if (error == ENOENT)
