@@ -146,8 +146,28 @@ zfs_file_write(zfs_file_t *zfp, const void *buf, size_t count, ssize_t *resid)
  *
  * Returns 0 on success errno on failure.
  */
+zfs_file_observer_t zfs_file_observer = NULL;
+
+static int zfs_file_pwrite_impl(zfs_file_t *, const void *, size_t, loff_t,
+    uint8_t, ssize_t *);
+
 int
 zfs_file_pwrite(zfs_file_t *zfp, const void *buf,
+    size_t count, loff_t pos, uint8_t ashift, ssize_t *resid)
+{
+	zfs_file_observer_t observer = zfs_file_observer;
+	int error;
+
+	if (observer != NULL)
+		observer(ZFS_FILE_WRITE_BEGIN, zfp, buf, count, pos, 0);
+	error = zfs_file_pwrite_impl(zfp, buf, count, pos, ashift, resid);
+	if (observer != NULL)
+		observer(ZFS_FILE_WRITE_END, zfp, buf, count, pos, error);
+	return (error);
+}
+
+static int
+zfs_file_pwrite_impl(zfs_file_t *zfp, const void *buf,
     size_t count, loff_t pos, uint8_t ashift, ssize_t *resid)
 {
 	file_t *fp = zfp;
@@ -331,12 +351,18 @@ int
 zfs_file_fsync(zfs_file_t *zfp, int flags)
 {
 	file_t *fp = zfp;
+	zfs_file_observer_t observer = zfs_file_observer;
+	int error = 0;
+
 	(void) flags;
 
+	if (observer != NULL)
+		observer(ZFS_FILE_FLUSH_BEGIN, zfp, NULL, 0, 0, 0);
 	if (fsync(fp->f_fd) < 0)
-		return (errno);
-
-	return (0);
+		error = errno;
+	if (observer != NULL)
+		observer(ZFS_FILE_FLUSH_END, zfp, NULL, 0, 0, error);
+	return (error);
 }
 
 /*

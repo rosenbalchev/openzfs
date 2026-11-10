@@ -28,6 +28,25 @@ typedef off_t loff_t;
 
 typedef void zfs_file_t;
 
+#ifndef _KERNEL
+/*
+ * Optional observer of user-space file writes and flushes, for
+ * failure-injection tests (NULL by default).  WRITE_BEGIN is called before
+ * any byte of a zfs_file_pwrite() reaches the file and WRITE_END after it
+ * returns; FLUSH_BEGIN/FLUSH_END bracket zfs_file_fsync().  'offset' is the
+ * absolute file offset and 'result' the errno returned (END events only).
+ */
+typedef enum zfs_file_event {
+	ZFS_FILE_WRITE_BEGIN,
+	ZFS_FILE_WRITE_END,
+	ZFS_FILE_FLUSH_BEGIN,
+	ZFS_FILE_FLUSH_END
+} zfs_file_event_t;
+typedef void (*zfs_file_observer_t)(zfs_file_event_t event, zfs_file_t *fp,
+    const void *buf, size_t count, loff_t offset, int result);
+extern zfs_file_observer_t zfs_file_observer;
+#endif
+
 typedef struct zfs_file_attr {
 	uint64_t	zfa_size;	/* file size */
 	mode_t		zfa_mode;	/* file type */
