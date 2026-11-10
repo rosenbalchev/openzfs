@@ -6474,7 +6474,13 @@ query_directory_FileFullDirectoryInformation(PDEVICE_OBJECT DeviceObject,
 		    kmem_alloc(zccb->searchname.MaximumLength,
 		    KM_SLEEP);
 
-		if (zccb->ContainsWildCards) {
+		/*
+		 * FsRtlIsNameInExpression() needs an upcased expression only
+		 * when it ignores case.  On a case-sensitive dataset the
+		 * match is exact, so an upcased "*.BIN" would match nothing.
+		 */
+		if (zccb->ContainsWildCards &&
+		    zfsvfs->z_case != ZFS_CASE_SENSITIVE) {
 			Status = RtlUpcaseUnicodeString(&zccb->searchname,
 			    IrpSp->Parameters.QueryDirectory.FileName, FALSE);
 		} else {
