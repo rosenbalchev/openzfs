@@ -917,7 +917,14 @@ mmp_signal_all_threads(void)
 
 	spa_namespace_enter(FTAG);
 	while ((spa = spa_next(spa))) {
-		if (spa->spa_state == POOL_STATE_ACTIVE)
+		/*
+		 * spa_export_common() sets spa_export_thread under the
+		 * namespace lock and then tears the pool down without it,
+		 * destroying the mmp locks while spa_state may still read
+		 * ACTIVE; such a pool has nothing left to signal.
+		 */
+		if (spa->spa_state == POOL_STATE_ACTIVE &&
+		    spa->spa_export_thread == NULL)
 			mmp_signal_thread(spa);
 	}
 	spa_namespace_exit(FTAG);
