@@ -1633,6 +1633,25 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	}
 
 	/*
+	 * Unmounting waits only one round above, so znodes whose vnodes the
+	 * Cache Manager still holds can remain on z_all_znodes.  Release
+	 * their SA handles, and with them their dnode holds, now: otherwise
+	 * the objset can never finish evicting after dmu_objset_disown() and
+	 * "zpool export" blocks forever in spa_evicting_os_wait().  A later
+	 * zfs_vnop_reclaim() frees a znode whose z_sa_hdl is NULL without
+	 * touching the DMU.
+	 */
+	if (unmounting) {
+		mutex_enter(&zfsvfs->z_znodes_lock);
+		for (zp = list_head(&zfsvfs->z_all_znodes); zp != NULL;
+		    zp = list_next(&zfsvfs->z_all_znodes, zp)) {
+			if (zp->z_sa_hdl)
+				zfs_znode_dmu_fini(zp);
+		}
+		mutex_exit(&zfsvfs->z_znodes_lock);
+	}
+
+	/*
 	 * If we are unmounting, set the unmounted flag and let new VFS ops
 	 * unblock.  zfs_inactive will have the unmounted behavior, and all
 	 * other VFS ops will fail with EIO.
