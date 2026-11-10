@@ -43,6 +43,7 @@ extern char	*optarg;
 #define	_SC_PAGE_SIZE		_SC_PAGESIZE
 #define	_SC_NPROCESSORS_ONLN	15
 #define	_SC_PHYS_PAGES		500
+#define	_SC_AVPHYS_PAGES	501
 #define	_SC_IOV_MAX		600
 
 #define	X_OK	1

@@ -8122,6 +8122,13 @@ arc_init(void)
 			    2ULL << SPA_MAXBLOCKSHIFT);
 		}
 	}
+#elif defined(_WIN32)
+	/*
+	 * zfswin-um.exe (lib/libzpool/arc_os.c): real memory pressure, so the
+	 * kernel's minimum of 1/32 of the memory, and the ARC shrinks while
+	 * Windows has less than 1/16 of it available.
+	 */
+	arc_sys_free = allmem / 16;
 #else
 	/*
 	 * In userland, there's only the memory pressure that we artificially

@@ -20,6 +20,59 @@
 #include <sys/zfs_context.h>
 #include <sys/arc_impl.h>
 
+#ifdef _WIN32
+/*
+ * On Windows libzpool is also the engine of zfswin-um.exe, the user-mode
+ * edition: a service that runs as long as the machine does, not a test.
+ * The test values below let the ARC grow to half the memory and never
+ * shrink it (GitHub issue #3).  A quarter of the memory at most, so the
+ * whole process (the ARC, and the dbufs, dnodes and heap around it) stays
+ * within the third the kernel driver allows, and memory given back when
+ * Windows has less than arc_sys_free available (arc_init()).
+ */
+uint64_t
+arc_default_max(uint64_t min, uint64_t allmem)
+{
+	return (MAX(allmem / 4, min));
+}
+
+uint64_t
+arc_all_memory(void)
+{
+	return (ptob(physmem));
+}
+
+/*
+ * Available memory (free and standby pages).  arc_adapt() asks for every
+ * buffer it adds, so the system call is made at most every 10 ms.
+ */
+uint64_t
+arc_free_memory(void)
+{
+	static volatile uint64_t avail, when;
+	hrtime_t now = gethrtime();
+
+	if (when == 0 || now - when > MSEC2NSEC(10)) {
+		avail = ptob((uint64_t)sysconf(_SC_AVPHYS_PAGES));
+		when = now;
+	}
+	return (avail);
+}
+
+int64_t
+arc_available_memory(void)
+{
+	return ((int64_t)arc_free_memory() - (int64_t)arc_sys_free);
+}
+
+int
+arc_memory_throttle(spa_t *spa, uint64_t reserve, uint64_t txg)
+{
+	(void) spa, (void) reserve, (void) txg;
+	return (0);
+}
+#else
+
 /*
  * Return a default max arc size based on the amount of physical memory.
  * This may be overridden by tuning the zfs_arc_max module parameter.
@@ -66,6 +119,7 @@ arc_free_memory(void)
 {
 	return (random_in_range(arc_all_memory() * 20 / 100));
 }
+#endif /* _WIN32 */
 
 void
 arc_register_hotplug(void)

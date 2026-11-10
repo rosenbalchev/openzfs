@@ -2150,12 +2150,16 @@ sysconf(int name)
 		 */
 		return (1024);
 	case _SC_PHYS_PAGES:
+	case _SC_AVPHYS_PAGES:
 	case _SC_PAGE_SIZE:
 		GetSystemInfo(&info);
 		if (name == _SC_PAGE_SIZE)
 			return (info.dwPageSize);
 		status.dwLength = sizeof (status);
 		GlobalMemoryStatusEx(&status);
+		/* Available: free, zeroed and standby (cache) pages. */
+		if (name == _SC_AVPHYS_PAGES)
+			return (status.ullAvailPhys / info.dwPageSize);
 		return ((long)(status.ullTotalPhys / info.dwPageSize));
 	default:
 		return (-1);
