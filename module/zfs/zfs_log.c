@@ -62,7 +62,12 @@
 int
 zfs_log_create_txtype(zil_create_t type, vsecattr_t *vsecp, vattr_t *vap)
 {
-	int isxvattr = (vap->va_mask & ATTR_XVATTR);
+	/*
+	 * Test, do not truncate: ATTR_XVATTR is bit 63 on some platforms
+	 * (Windows), which an int would drop, logging TX_CREATE while
+	 * zfs_log_create() still writes the xvattr in front of the name.
+	 */
+	boolean_t isxvattr = (vap->va_mask & ATTR_XVATTR) != 0;
 	switch (type) {
 	case Z_FILE:
 		if (vsecp == NULL && !isxvattr)
