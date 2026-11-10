@@ -100,11 +100,16 @@ if (NOT CTRPP_PROGRAM)
 	message(FATAL_ERROR "Failed to find ctrpp.exe")
 endif()
 
+# ctrpp writes into this build tree; its outputs are copied into the source
+# tree only when they change, so a reconfigure does not recompile what
+# includes them (and build trees sharing the source tree see no rewrite).
+set(CTRPP_OUT "${CMAKE_CURRENT_BINARY_DIR}/ctrpp")
+file(MAKE_DIRECTORY "${CTRPP_OUT}")
 execute_process(
 	COMMAND "${CTRPP_PROGRAM}"
-		-o "${CMAKE_CURRENT_SOURCE_DIR}/OpenZFS_perf.h"
-		-rc "${CMAKE_CURRENT_SOURCE_DIR}/OpenZFS_perf.rc"
-		-ch "${CMAKE_CURRENT_SOURCE_DIR}/OpenZFS_counters.h"
+		-o "${CTRPP_OUT}/OpenZFS_perf.h"
+		-rc "${CTRPP_OUT}/OpenZFS_perf.rc"
+		-ch "${CTRPP_OUT}/OpenZFS_counters.h"
 		"${CMAKE_CURRENT_SOURCE_DIR}/OpenZFS.man"
 	RESULT_VARIABLE CTRPP_RESULT
 	OUTPUT_VARIABLE CTRPP_STDOUT
@@ -117,6 +122,10 @@ if (NOT CTRPP_RESULT EQUAL 0)
 		"stdout: ${CTRPP_STDOUT}\n"
 		"stderr: ${CTRPP_STDERR}")
 endif()
+foreach(CTRPP_FILE OpenZFS_perf.h OpenZFS_perf.rc OpenZFS_counters.h)
+	execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+		"${CTRPP_OUT}/${CTRPP_FILE}" "${CMAKE_CURRENT_SOURCE_DIR}/${CTRPP_FILE}")
+endforeach()
 
 file(GLOB CSOURCES CONFIGURE_DEPENDS "*.c")
 

@@ -87,7 +87,10 @@ set(WDK_WINVER "0x0601" CACHE STRING "Default WINVER for WDK targets")
 set(WDK_NTDDI_VERSION "" CACHE STRING "Specified NTDDI_VERSION for WDK targets if needed")
 
 set(WDK_ADDITIONAL_FLAGS_FILE "${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/wdkflags.h")
-file(WRITE ${WDK_ADDITIONAL_FLAGS_FILE} "#pragma runtime_checks(\"suc\", off)")
+# Every kernel object force-includes it: rewritten only when it changes, so
+# a reconfigure does not recompile the whole driver.
+file(WRITE "${WDK_ADDITIONAL_FLAGS_FILE}.new" "#pragma runtime_checks(\"suc\", off)")
+execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${WDK_ADDITIONAL_FLAGS_FILE}.new" "${WDK_ADDITIONAL_FLAGS_FILE}")
 
 set(WDK_COMPILE_FLAGS
     "/Zp8" # set struct alignment
