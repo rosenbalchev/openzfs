@@ -310,7 +310,8 @@ taskq_create(const char *name, int nthreads, pri_t pri,
 
 	for (t = 0; t < nthreads; t++)
 		VERIFY((tq->tq_threadlist[t] = thread_create_named(tq->tq_name,
-		    NULL, 0, taskq_thread, tq, 0, &p0, TS_RUN, pri)) != NULL);
+		    NULL, 0, taskq_thread, tq, 0, &p0, TS_RUN | TS_JOINABLE,
+		    pri)) != NULL);
 
 	return (tq);
 }
@@ -339,6 +340,16 @@ taskq_destroy(taskq_t *tq)
 	}
 
 	mutex_exit(&tq->tq_lock);
+
+	/*
+	 * tq_nthreads reaches zero while each worker is still on its way out
+	 * (thread_exit() and the C runtime's per-thread teardown).  Join them
+	 * so no worker is still running when the caller frees what it uses or
+	 * the process exits; on Windows a detached worker racing the CRT's
+	 * exit-time teardown crashed zpool.exe with 0xC0000005.
+	 */
+	for (int t = 0; t < nthreads; t++)
+		VERIFY0(thread_join(tq->tq_threadlist[t]));
 
 	kmem_free(tq->tq_threadlist, nthreads * sizeof (kthread_t *));
 
