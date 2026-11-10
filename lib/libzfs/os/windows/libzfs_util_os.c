@@ -114,6 +114,11 @@ zfs_version_kernel(void)
 	LSTATUS status = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
 	    "SYSTEM\\ControlSet001\\Services\\OpenZFS", 0, KEY_READ, &hKey);
 
+	/* No driver: the user-mode engine's service (sys/zfs_bridge.h). */
+	if (status != ERROR_SUCCESS)
+		status = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+		    "SYSTEM\\CurrentControlSet\\Services\\ZfsWinUserMode", 0,
+		    KEY_READ, &hKey);
 	if (status != ERROR_SUCCESS)
 		return (NULL);
 

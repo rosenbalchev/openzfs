@@ -36,6 +36,8 @@
 #endif
 
 #include <sys/fs/zfs.h>
+#include <sys/zfs_bridge.h>
+#include <stdlib.h>
 
 #include <windows.h>
 #include <winternl.h>
@@ -322,6 +324,69 @@ backslash2slash(char *s)
 	}
 }
 
+/*
+ * Datasets mounted by the user-mode ZFS bridge (sys/zfs_bridge.h).  Their
+ * volumes belong to the bridge's filesystem, not to the ZFS driver, so the
+ * volume walk below cannot recognize them.  Appends to buf like that walk
+ * (or only counts, with buf NULL); 0 when no bridge is running.
+ */
+static int
+bridge_getfsstat(struct statfs *buf, int bufsize)
+{
+	zfs_bridge_hdr_t hdr = { 0 };
+	void *sect[ZFS_BRIDGE_SECTIONS] = { 0 };
+	char *text, *line, *next, *tab1, *tab2;
+	int count = 0;
+
+	if ((text = calloc(1, 65536)) == NULL)
+		return (0);
+	hdr.zb_op = ZFS_BRIDGE_OP_MNTTAB;
+	hdr.zb_cap[ZFS_BRIDGE_DST] = 65535;
+	sect[ZFS_BRIDGE_DST] = text;
+	if (zfs_bridge_call(&hdr, sect) != 0 || hdr.zb_error != 0) {
+		free(text);
+		return (0);
+	}
+	for (line = text; *line != '\0'; line = next) {
+		if ((next = strchr(line, '\n')) == NULL)
+			next = line + strlen(line);
+		else
+			*next++ = '\0';
+		if ((tab1 = strchr(line, '\t')) == NULL ||
+		    (tab2 = strchr(tab1 + 1, '\t')) == NULL)
+			continue;
+		*tab1++ = '\0';
+		*tab2++ = '\0';
+		if (buf != NULL) {
+			if (bufsize < (int)sizeof (struct statfs))
+				break;
+			memset(buf, 0, sizeof (*buf));
+			strlcpy(buf->f_mntfromname, line,
+			    sizeof (buf->f_mntfromname));
+			strlcpy(buf->f_fstypename, MNTTYPE_ZFS,
+			    sizeof (buf->f_fstypename));
+			/* "E:" is reported as "E:\", as the volume walk does */
+			if (strlen(tab1) == 2 && tab1[1] == ':')
+				snprintf(buf->f_mntonname,
+				    sizeof (buf->f_mntonname), "%s\\", tab1);
+			else
+				strlcpy(buf->f_mntonname, tab1,
+				    sizeof (buf->f_mntonname));
+			/* 1: read-only, 2: noatime (zfs get shows these) */
+			if (atoi(tab2) & 1)
+				buf->f_flags |= MNT_RDONLY;
+			if (atoi(tab2) & 2)
+				buf->f_flags |= MNT_NOATIME;
+			backslash2slash(buf->f_mntonname);
+			buf++;
+			bufsize -= sizeof (*buf);
+		}
+		count++;
+	}
+	free(text);
+	return (count);
+}
+
 int
 getfsstat(struct statfs *buf, int bufsize, int flags)
 {
@@ -519,7 +584,7 @@ getfsstat(struct statfs *buf, int bufsize, int flags)
 
 	FindVolumeClose(vh);
 	vh = INVALID_HANDLE_VALUE;
-	return (count);
+	return (count + bridge_getfsstat(buf, bufsize));
 }
 
 

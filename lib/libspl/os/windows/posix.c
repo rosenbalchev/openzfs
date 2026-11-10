@@ -39,6 +39,7 @@
 #include <wfunopen.h>
 #include <pwd.h>
 #include <grp.h>
+#include <sys/zfs_bridge.h>
 #include <search.h>
 #include <process.h>
 #include <stdarg.h>
@@ -1150,6 +1151,83 @@ wosix_fsync(int fd)
 	return (0);
 }
 
+/* A connection to the user-mode ZFS bridge, waiting briefly if busy. */
+static HANDLE
+zfs_bridge_connect(void)
+{
+	HANDLE h;
+	int tries;
+
+	for (tries = 0; tries < 50; tries++) {
+		h = CreateFileA(ZFS_BRIDGE_PIPE, GENERIC_READ | GENERIC_WRITE,
+		    0, NULL, OPEN_EXISTING, 0, NULL);
+		if (h != INVALID_HANDLE_VALUE)
+			return (h);
+		if (GetLastError() != ERROR_PIPE_BUSY)
+			return (INVALID_HANDLE_VALUE);
+		(void) WaitNamedPipeA(ZFS_BRIDGE_PIPE, 200);
+	}
+	return (INVALID_HANDLE_VALUE);
+}
+
+int
+zfs_bridge_is_fd(int fd)
+{
+	return (GetFileType(ITOH(fd)) == FILE_TYPE_PIPE);
+}
+
+static int
+zfs_bridge_io(HANDLE h, void *buf, uint64_t len, int write)
+{
+	char *p = buf;
+	DWORD n;
+
+	while (len > 0) {
+		DWORD chunk = (DWORD)(len > (1U << 30) ? (1U << 30) : len);
+		BOOL ok = write ? WriteFile(h, p, chunk, &n, NULL) :
+		    ReadFile(h, p, chunk, &n, NULL);
+
+		if (!ok || n == 0)
+			return (EPIPE);
+		p += n;
+		len -= n;
+	}
+	return (0);
+}
+
+int
+zfs_bridge_call(zfs_bridge_hdr_t *hdr, void *sect[ZFS_BRIDGE_SECTIONS])
+{
+	zfs_bridge_hdr_t resp;
+	HANDLE h;
+	int i, error = 0;
+
+	if ((h = zfs_bridge_connect()) == INVALID_HANDLE_VALUE)
+		return (ENXIO);
+	hdr->zb_magic = ZFS_BRIDGE_MAGIC;
+	hdr->zb_error = 0;
+	error = zfs_bridge_io(h, hdr, sizeof (*hdr), 1);
+	for (i = 0; error == 0 && i < ZFS_BRIDGE_SECTIONS; i++)
+		if (hdr->zb_len[i] > 0)
+			error = zfs_bridge_io(h, sect[i], hdr->zb_len[i], 1);
+	if (error == 0)
+		error = zfs_bridge_io(h, &resp, sizeof (resp), 0);
+	if (error == 0 && resp.zb_magic != ZFS_BRIDGE_MAGIC)
+		error = EPROTO;
+	for (i = 0; error == 0 && i < ZFS_BRIDGE_SECTIONS; i++) {
+		if (resp.zb_len[i] == 0)
+			continue;
+		if (resp.zb_len[i] > hdr->zb_cap[i] || sect[i] == NULL)
+			error = EPROTO;
+		else
+			error = zfs_bridge_io(h, sect[i], resp.zb_len[i], 0);
+	}
+	CloseHandle(h);
+	if (error == 0)
+		*hdr = resp;
+	return (error);
+}
+
 int
 wosix_open(const char *inpath, int oflag, ...)
 {
@@ -1319,6 +1397,22 @@ wosix_open(const char *inpath, int oflag, ...)
 		snprintf(tmp, sizeof (tmp), "\\\\?\\%s", &path[5]);
 		h = CreateFile(tmp, mode, share, NULL, how,
 		    FILE_ATTRIBUTE_NORMAL, NULL);
+	}
+
+	/*
+	 * No ZFS driver: the user-mode engine answers the same ioctls on a
+	 * named pipe (sys/zfs_bridge.h).  This connection only identifies the
+	 * descriptor; every ioctl makes its own.
+	 */
+	if (h == INVALID_HANDLE_VALUE && strcmp(inpath, "\\\\.\\ZFS") == 0 &&
+	    (GetLastError() == ERROR_FILE_NOT_FOUND ||
+	    GetLastError() == ERROR_PATH_NOT_FOUND)) {
+		HANDLE p = zfs_bridge_connect();
+
+		if (p != INVALID_HANDLE_VALUE)
+			h = p;
+		else
+			SetLastError(ERROR_FILE_NOT_FOUND);
 	}
 
 	// If we failed, translate error to posix

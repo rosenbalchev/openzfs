@@ -19,6 +19,8 @@
 #include <sys/zfs_ioctl.h>
 #include <os/windows/zfs/sys/zfs_ioctl_compat.h>
 #include <libzfs_core.h>
+#include <string.h>
+#include <sys/zfs_bridge.h>
 
 int
 ioctl_impl(int fd, unsigned long request, zfs_iocparm_t *wrap)
@@ -123,6 +125,58 @@ zcmd_ioctl_compat(int fd, int request, zfs_cmd_t *zc, const int cflag)
 }
 
 /*
+ * The same ioctl through the user-mode ZFS bridge (sys/zfs_bridge.h): the
+ * buffers zfs_cmd_t points at travel with it, and zfs_cmd_t and the output
+ * buffers come back as the driver would have left them.
+ */
+static int
+zcmd_ioctl_bridge(unsigned long request, zfs_cmd_t *zc)
+{
+	zfs_bridge_hdr_t hdr = { 0 };
+	void *sect[ZFS_BRIDGE_SECTIONS] = { 0 };
+	uint64_t dst = zc->zc_nvlist_dst, history = zc->zc_history;
+	uint64_t src = zc->zc_nvlist_src, conf = zc->zc_nvlist_conf;
+	int error;
+
+	hdr.zb_op = ZFS_BRIDGE_OP_IOCTL;
+	hdr.zb_request = request;
+	sect[ZFS_BRIDGE_CMD] = zc;
+	hdr.zb_len[ZFS_BRIDGE_CMD] = sizeof (*zc);
+	hdr.zb_cap[ZFS_BRIDGE_CMD] = sizeof (*zc);
+	if (zc->zc_nvlist_src != 0) {
+		sect[ZFS_BRIDGE_SRC] = (void *)(uintptr_t)zc->zc_nvlist_src;
+		hdr.zb_len[ZFS_BRIDGE_SRC] = zc->zc_nvlist_src_size;
+	}
+	if (zc->zc_nvlist_conf != 0) {
+		sect[ZFS_BRIDGE_CONF] = (void *)(uintptr_t)zc->zc_nvlist_conf;
+		hdr.zb_len[ZFS_BRIDGE_CONF] = zc->zc_nvlist_conf_size;
+	}
+	if (history != 0) {
+		sect[ZFS_BRIDGE_HISTORY] = (void *)(uintptr_t)history;
+		if (request == ZFS_IOC_POOL_GET_HISTORY)
+			hdr.zb_cap[ZFS_BRIDGE_HISTORY] = zc->zc_history_len;
+		else
+			hdr.zb_len[ZFS_BRIDGE_HISTORY] =
+			    strlen((const char *)(uintptr_t)history) + 1;
+	}
+	if (dst != 0) {
+		sect[ZFS_BRIDGE_DST] = (void *)(uintptr_t)dst;
+		hdr.zb_cap[ZFS_BRIDGE_DST] = zc->zc_nvlist_dst_size;
+	}
+	if ((error = zfs_bridge_call(&hdr, sect)) != 0) {
+		errno = error;
+		return (-1);
+	}
+	/* Our pointers again, over the server's. */
+	zc->zc_nvlist_src = src;
+	zc->zc_nvlist_conf = conf;
+	zc->zc_nvlist_dst = dst;
+	zc->zc_history = history;
+	errno = (int)hdr.zb_error;
+	return (hdr.zb_error != 0 ? -1 : 0);
+}
+
+/*
  * This is the Windows version of ioctl(). Because the XNU kernel
  * handles copyin() and copyout(), we must return success from the
  * ioctl() handler (or it will not copyout() for userland),
@@ -135,7 +189,10 @@ lzc_ioctl_fd_os(int fd, unsigned long request, zfs_cmd_t *zc)
 	int ret, cflag = ZFS_CMD_COMPAT_NONE;
 
 	oldsize = zc->zc_nvlist_dst_size;
-	ret = zcmd_ioctl_compat(fd, request, zc, cflag);
+	if (zfs_bridge_is_fd(fd))
+		ret = zcmd_ioctl_bridge(request, zc);
+	else
+		ret = zcmd_ioctl_compat(fd, request, zc, cflag);
 
 	if (ret == 0 && oldsize < zc->zc_nvlist_dst_size) {
 		ret = -1;
