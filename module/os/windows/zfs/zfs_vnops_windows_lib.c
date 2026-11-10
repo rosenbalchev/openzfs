@@ -1359,7 +1359,7 @@ zfs_readdir_emitdir(zfsvfs_t *zfsvfs, const char *name, emitdir_ptr_t *ctx,
 		FILE_ID_ALL_EXTD_BOTH_DIR_INFORMATION *fiaebdi =
 		    (FILE_ID_ALL_EXTD_BOTH_DIR_INFORMATION *)
 		    ctx->bufptr;
-		next_offset = &fiebdi->NextEntryOffset;
+		next_offset = &fiaebdi->NextEntryOffset;
 
 		fiaebdi->FileIndex = ctx->offset;
 		fiaebdi->AllocationSize.QuadPart =
@@ -6422,7 +6422,7 @@ QueryDeviceRelations(PDEVICE_OBJECT DeviceObject, PIRP *PIrp,
 		if (!DeviceRelations) {
 			dprintf("enomem DeviceRelations\n");
 			Status = STATUS_INSUFFICIENT_RESOURCES;
-			goto out;
+			break;
 		}
 
 		mount_t *zmo_dcb = (mount_t *)zmo->parent_device;

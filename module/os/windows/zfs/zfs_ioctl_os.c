@@ -1098,7 +1098,7 @@ zfs_send_system_boot(void)
 {
 	nvlist_t *ereport, *detector;
 	// char class[64];
-	uint64_t ena;
+	uint64_t ena = 0;
 	int rc;
 	ereport = fm_nvlist_create(NULL);
 	detector = fm_nvlist_create(NULL);
